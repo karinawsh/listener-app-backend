@@ -1,0 +1,433 @@
+// Ottering App - Database Schema
+
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// 1. USER & AUTHENTICATION
+// ============================================
+
+model User {
+  id            String    @id @default(uuid())
+  firstName     String
+  lastName      String
+  email         String    @unique
+  passwordHash  String
+  displayName   String?
+  bio           String?   @db.Text
+  profileImage  String?
+  birthYear     String
+  birthMonth    String
+  gender        Gender
+  role          UserRole  @default(USER)
+  
+  // Relationships
+  listenerProfile  ListenerProfile?
+  sessions         Session[]        @relation("ClientSessions")
+  reviews          Review[]
+  chatMessages     ChatMessage[]
+  payments         Payment[]
+  
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([email])
+  @@index([role])
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  PREFER_NOT_TO_SAY
+}
+
+enum UserRole {
+  USER
+  LISTENER
+}
+
+// ============================================
+// 2. LISTENER PROFILE
+// ============================================
+
+model ListenerProfile {
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  name            String
+  title           String
+  bio             String   @db.Text
+  pricePerHour    Decimal  @db.Decimal(10, 2)
+  price30Min      Decimal  @db.Decimal(10, 2)
+  price60Min      Decimal  @db.Decimal(10, 2)
+  price120Min     Decimal  @db.Decimal(10, 2)
+  rating          Float    @default(0.0)
+  reviewCount     Int      @default(0)
+  availability    ListenerAvailability @default(OFFLINE)
+  image           String?
+  verified        Boolean  @default(false)
+  experience      String?
+  industry        String?
+  portfolioUrl    String?
+  bankDetails     Json?
+  
+  // Relationships
+  categories          ListenerCategory[]
+  attributes          ListenerAttribute[]
+  availabilitySlots   AvailabilitySlot[]
+  sessions            Session[]           @relation("ListenerSessions")
+  reviews             Review[]
+  earnings            Earning[]
+  withdrawals         Withdrawal[]
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([availability])
+  @@index([rating])
+  @@index([verified])
+}
+
+enum ListenerAvailability {
+  AVAILABLE
+  BUSY
+  OFFLINE
+}
+
+// ============================================
+// 3. CATEGORIES
+// ============================================
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  listeners   ListenerCategory[]
+  
+  createdAt   DateTime @default(now())
+}
+
+model ListenerCategory {
+  listenerId  String
+  categoryId  String
+  listener    ListenerProfile @relation(fields: [listenerId], references: [id], onDelete: Cascade)
+  category    Category        @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+
+  @@id([listenerId, categoryId])
+}
+
+// ============================================
+// 4. LISTENER ATTRIBUTES
+// ============================================
+
+model ListenerAttribute {
+  id          String   @id @default(uuid())
+  listenerId  String
+  listener    ListenerProfile @relation(fields: [listenerId], references: [id], onDelete: Cascade)
+  type        AttributeType
+  value       String
+
+  @@index([listenerId, type])
+}
+
+enum AttributeType {
+  TONE
+  RELATIONAL_ENERGY
+  APPROACH
+}
+
+// ============================================
+// 5. AVAILABILITY SLOTS
+// ============================================
+
+model AvailabilitySlot {
+  id          String   @id @default(uuid())
+  listenerId  String
+  listener    ListenerProfile @relation(fields: [listenerId], references: [id], onDelete: Cascade)
+  dayOfWeek   DayOfWeek
+  startTime   String   // Format: "HH:mm"
+  endTime     String   // Format: "HH:mm"
+  enabled     Boolean  @default(true)
+
+  @@index([listenerId, dayOfWeek])
+}
+
+enum DayOfWeek {
+  MONDAY
+  TUESDAY
+  WEDNESDAY
+  THURSDAY
+  FRIDAY
+  SATURDAY
+  SUNDAY
+}
+
+// ============================================
+// 6. SESSIONS & BOOKINGS
+// ============================================
+
+model Booking {
+  id             String        @id @default(uuid())
+  clientId       String
+  listenerId     String
+  scheduledTime  DateTime?
+  duration       Int           // in minutes
+  isInstant      Boolean       @default(false)
+  status         BookingStatus @default(PENDING_PAYMENT)
+  price          Decimal       @db.Decimal(10, 2)
+  notes          String?       @db.Text
+  
+  // Relationships
+  session        Session?
+  paymentIntent  PaymentIntent?
+  
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([clientId])
+  @@index([listenerId])
+  @@index([status])
+}
+
+enum BookingStatus {
+  PENDING_PAYMENT
+  CONFIRMED
+  CANCELLED
+}
+
+model Session {
+  id            String        @id @default(uuid())
+  bookingId     String        @unique
+  booking       Booking       @relation(fields: [bookingId], references: [id])
+  clientId      String
+  listenerId    String
+  client        User          @relation("ClientSessions", fields: [clientId], references: [id])
+  listener      ListenerProfile @relation("ListenerSessions", fields: [listenerId], references: [id])
+  
+  scheduledTime DateTime?
+  duration      Int           // in minutes
+  status        SessionStatus @default(UPCOMING)
+  price         Decimal       @db.Decimal(10, 2)
+  type          SessionType   @default(TEXT_CHAT)
+  notes         String?       @db.Text
+  startedAt     DateTime?
+  completedAt   DateTime?
+  
+  // Relationships
+  chat          Chat?
+  review        Review?
+  payment       Payment?
+  
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([clientId])
+  @@index([listenerId])
+  @@index([status])
+  @@index([scheduledTime])
+}
+
+enum SessionStatus {
+  UPCOMING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum SessionType {
+  VIDEO_CALL
+  PHONE_CALL
+  TEXT_CHAT
+}
+
+// ============================================
+// 7. CHAT & MESSAGES
+// ============================================
+
+model Chat {
+  id              String      @id @default(uuid())
+  sessionId       String      @unique
+  session         Session     @relation(fields: [sessionId], references: [id])
+  clientId        String
+  listenerId      String
+  status          ChatStatus  @default(SCHEDULED)
+  scheduledTime   DateTime?
+  lastMessage     String?
+  lastMessageTime DateTime?
+  unreadCount     Int         @default(0)
+  isInstant       Boolean     @default(false)
+  
+  // Relationships
+  messages        ChatMessage[]
+  
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+
+  @@index([clientId])
+  @@index([listenerId])
+  @@index([status])
+}
+
+enum ChatStatus {
+  SCHEDULED
+  ACTIVE
+  COMPLETED
+}
+
+model ChatMessage {
+  id        String   @id @default(uuid())
+  chatId    String
+  chat      Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id])
+  message   String   @db.Text
+  isRead    Boolean  @default(false)
+  timestamp DateTime @default(now())
+  
+  createdAt DateTime @default(now())
+
+  @@index([chatId])
+  @@index([timestamp])
+}
+
+// ============================================
+// 8. REVIEWS
+// ============================================
+
+model Review {
+  id          String   @id @default(uuid())
+  sessionId   String   @unique
+  session     Session  @relation(fields: [sessionId], references: [id])
+  listenerId  String
+  listener    ListenerProfile @relation(fields: [listenerId], references: [id])
+  userId      String
+  user        User     @relation(fields: [userId], references: [id])
+  rating      Int      // 1-5
+  comment     String?  @db.Text
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([listenerId])
+}
+
+// ============================================
+// 9. PAYMENTS
+// ============================================
+
+model PaymentIntent {
+  id                      String              @id @default(uuid())
+  bookingId               String              @unique
+  booking                 Booking             @relation(fields: [bookingId], references: [id])
+  clientId                String
+  stripePaymentIntentId   String?
+  amount                  Decimal             @db.Decimal(10, 2)
+  currency                String              @default("IDR")
+  clientSecret            String?
+  status                  PaymentIntentStatus @default(PENDING)
+  
+  // Relationships
+  payment                 Payment?
+  
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  @@index([clientId])
+  @@index([status])
+}
+
+enum PaymentIntentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  paymentIntentId   String        @unique
+  paymentIntent     PaymentIntent @relation(fields: [paymentIntentId], references: [id])
+  sessionId         String        @unique
+  session           Session       @relation(fields: [sessionId], references: [id])
+  clientId          String
+  client            User          @relation(fields: [clientId], references: [id])
+  amount            Decimal       @db.Decimal(10, 2)
+  currency          String        @default("IDR")
+  status            PaymentStatus @default(SUCCEEDED)
+  paymentMethodId   String?
+  metadata          Json?
+  paidAt            DateTime      @default(now())
+  
+  // Relationships
+  earning           Earning?
+  
+  createdAt         DateTime      @default(now())
+
+  @@index([clientId])
+  @@index([status])
+}
+
+enum PaymentStatus {
+  SUCCEEDED
+  FAILED
+  REFUNDED
+}
+
+// ============================================
+// 10. EARNINGS & WITHDRAWALS
+// ============================================
+
+model Earning {
+  id            String        @id @default(uuid())
+  listenerId    String
+  listener      ListenerProfile @relation(fields: [listenerId], references: [id])
+  sessionId     String
+  paymentId     String        @unique
+  payment       Payment       @relation(fields: [paymentId], references: [id])
+  amount        Decimal       @db.Decimal(10, 2)
+  platformFee   Decimal       @db.Decimal(10, 2)
+  netAmount     Decimal       @db.Decimal(10, 2)
+  status        EarningStatus @default(PENDING)
+  earnedAt      DateTime      @default(now())
+  availableAt   DateTime?
+
+  @@index([listenerId])
+  @@index([status])
+}
+
+enum EarningStatus {
+  PENDING
+  AVAILABLE
+  WITHDRAWN
+}
+
+model Withdrawal {
+  id                String           @id @default(uuid())
+  listenerId        String
+  listener          ListenerProfile  @relation(fields: [listenerId], references: [id])
+  amount            Decimal          @db.Decimal(10, 2)
+  status            WithdrawalStatus @default(PENDING)
+  bankAccountId     String?
+  bankDetails       Json?
+  requestedAt       DateTime         @default(now())
+  completedAt       DateTime?
+  estimatedArrival  DateTime?
+
+  @@index([listenerId])
+  @@index([status])
+}
+
+enum WithdrawalStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
