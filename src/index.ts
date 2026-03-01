@@ -51,7 +51,11 @@ app.use((err: any, req: express.Request, res: express.Response, next: express.Ne
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`🚀 Ottering API server is running on http://localhost:${PORT}`);
-  console.log(`📚 API Base URL: http://localhost:${PORT}/api/v1`);
-});
+if (process.env.NODE_ENV !== "test") {
+  app.listen(PORT, () => {
+    console.log(`🚀 Ottering API server is running on http://localhost:${PORT}`);
+    console.log(`📚 API Base URL: http://localhost:${PORT}/api/v1`);
+  });
+}
+
+export default app;
